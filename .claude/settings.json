@@ -1,0 +1,8 @@
+{
+  "skills": {
+    "weather": {
+      "description": "Get current weather information for any location",
+      "enabled": true
+    }
+  }
+}

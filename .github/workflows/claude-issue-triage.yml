@@ -1,0 +1,101 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Issue Triage
+        id: triage
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          env: |
+            GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          claude_args: '--allowedTools "Bash(gh label list:*),Bash(gh label create:*),Bash(gh issue edit:*),Bash(gh issue view:*),Bash(gh issue comment:*),Bash(gh api:*)"'
+          prompt: |
+            Analiza el issue #${{ github.event.issue.number }} en ${{ github.repository }} y realiza triage automático.
+
+            ## Paso 1: Leer el issue
+            Ejecuta:
+            ```
+            gh issue view ${{ github.event.issue.number }} --repo ${{ github.repository }}
+            ```
+            para obtener el título, body y cualquier metadata del issue.
+
+            ## Paso 2: Asignar labels
+            Usando solo los labels de esta taxonomía:
+            - **Tipo** (elige uno): `bug`, `enhancement`, `question`, `documentation`
+            - **Prioridad** (elige uno): `priority: high`, `priority: medium`, `priority: low`
+            - **Área** (elige uno o más según CLAUDE.md): `area: rendering`, `area: input`, `area: collision`, `area: scoring`, `area: game-loop`
+
+            Primero verifica qué labels existen con:
+            ```
+            gh label list --repo ${{ github.repository }}
+            ```
+
+            Si un label de la taxonomía no existe, créalo (con descripción apropiada) usando:
+            ```
+            gh label create "nombre-del-label" --repo ${{ github.repository }} --description "descripción"
+            ```
+
+            Luego aplica los labels seleccionados:
+            ```
+            gh issue edit ${{ github.event.issue.number }} --repo ${{ github.repository }} --add-label "label1,label2,label3"
+            ```
+
+            ## Paso 3: Diagnosticar y comentar
+            Redacta un comentario de diagnóstico que incluya:
+            1. **Resumen** (1-2 líneas): qué es el issue en pocas palabras.
+            2. **Función(es)/Sección(es)** afectada(s) según CLAUDE.md (ej: `collide()`, `clearLines()`, `draw()`, etc.).
+            3. **Hipótesis de causa raíz**: por qué crees que está pasando.
+            4. **Enfoque sugerido**: cómo podría solucionarse (sin escribir código, solo la estrategia).
+            5. **Preguntas abiertas**: qué información adicional sería útil (si aplica).
+
+            Antes de publicar, verifica si ya existe un comentario tuyo (con el marcador `<!-- claude-issue-triage -->`) ejecutando:
+            ```
+            gh api repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments --jq '.[] | select(.body | contains("<!-- claude-issue-triage -->")) | .id'
+            ```
+
+            **Si existe** un comentario anterior (por edición del issue):
+            ```
+            gh api repos/${{ github.repository }}/issues/comments/<comment-id> -X PATCH -f body="<nuevo-body-con-<!-- claude-issue-triage --> al inicio>"
+            ```
+
+            **Si no existe**:
+            ```
+            gh issue comment ${{ github.event.issue.number }} --repo ${{ github.repository }} --body "<body-con-<!-- claude-issue-triage --> al inicio>"
+            ```
+
+            ## Contexto del proyecto
+            Lee CLAUDE.md para entender la arquitectura del Tetris game (game.js, index.html, style.css, ~300 líneas, sin dependencias externas). Las secciones principales:
+            - **Initialization & State**: `init()`, `createBoard()`
+            - **Piece Management**: `randomPiece()`, `spawn()`, `rotateCW()`
+            - **Physics & Collision**: `collide()`, `tryRotate()`
+            - **Movement**: key handlers, soft/hard drop
+            - **Piece Locking & Cleanup**: `merge()`, `clearLines()`, `lockPiece()`
+            - **Rendering**: `draw()`, `drawBlock()`, `drawGrid()`, `drawNext()`, `ghostY()`
+            - **Game Loop**: `loop(ts)`
+            - **Game States**: `togglePause()`, `endGame()`
+
+            Usa estos nombres de función para conectar el issue a la parte específica del código.
+
+            ## Ejecución
+            No necesitas escribir código. Solo:
+            1. Lee el issue con `gh issue view`.
+            2. Crea/aplica labels con la taxonomía.
+            3. Redacta y publica (o actualiza) el comentario de diagnóstico.
+            4. Asegúrate de incluir `<!-- claude-issue-triage -->` para marcar el comentario como tuyo.
